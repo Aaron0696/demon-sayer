@@ -1,0 +1,141 @@
+---
+title: "Demon Sayer"
+author: "Aaron"
+output:
+  html_document: 
+    toc: yes
+    toc_float: yes
+    highlight: haddock
+    code_folding: show
+---
+
+```{r}
+aaRon::use.style()
+```
+
+# Load Libraries
+
+```{r, message = FALSE, warning = FALSE}
+library(reticulate)
+library(tidyverse)
+library(lubridate)
+library(knitr)
+# py_install("pandas")
+# py_install("praw")
+# py_install("psaw", pip = TRUE)
+```
+
+# Extract Data Using *PRAW* & *PSAW* [*Python*]
+
+```{python}
+# modules
+import praw
+from psaw import PushshiftAPI
+
+# search for reddit submissions from r/anime, with the words disc, kimetsu and yaiba in the title
+api = PushshiftAPI()
+gen = api.search_submissions(q = 'kimetsu+yaiba+episode+discussion', subreddit = 'anime')
+
+# container for title
+title = []
+# container for upvotes
+up = []
+# container for comments
+coms = []
+# container for creation date
+c8 = []
+# container for url
+url = []
+# author
+author = []
+
+# insert information into containers
+for c in gen:
+    title.append(c.title)
+    up.append(c.score)
+    coms.append(c.num_comments)
+    c8.append(c.created_utc)
+    url.append(c.full_link)
+    author.append(c.author)
+```
+
+# Tidy Data [*R*]
+
+```{r}
+# get data from python objects
+subs <- data.frame(title = py$title,
+                up = py$up,
+                coms = py$coms,
+                date = date(as.POSIXct(py$c8, origin = '1970-01-01')),
+                url = py$url,
+                author = py$author)
+
+regexp <- "[[:digit:]]+"
+
+# only keep submissions from autolovepon
+subs <- subs %>% 
+  filter(author == "AutoLovepon") %>%
+  # also filter away submissions with less than 5 comments
+  # AutoLovepon created an extra episode 4 discussion thread at 
+  # https://www.reddit.com/r/anime/comments/bi1sta/kimetsu_no_yaiba_episode_4_discussion/
+  # filtering by comments will remove this discussion thread
+  filter(coms > 5) %>%
+  # create a new numeric column to indicate episode number
+  mutate(epnum = str_extract(title,"[[:digit:]]+")) %>%
+  mutate(epnum = factor(epnum, levels = 1:nrow(.)))
+kable(subs, align = "c")
+```
+
+# Initial Look
+
+```{r}
+# https://www.r-graph-gallery.com/line-chart-dual-Y-axis-ggplot2.html
+# Value used to transform the data
+coeff <- 3
+
+ggplot(data = subs, aes(x = epnum, group = 1)) +
+  geom_bar(mapping = aes(y = coms), stat = "identity", alpha = 0.8, fill = "steelblue") + 
+  geom_line(mapping = aes(y = up/coeff), color = "orange", size = 1) +
+  geom_point(mapping = aes(y = up/coeff), color =  "red") +
+   scale_y_continuous(
+    # features of the first axis
+    name = "Number of Comments",
+    # add a second axis and specify its features
+    sec.axis = sec_axis(~.*coeff, name = "Number of Upvotes")
+   ) + 
+  xlab("Episode Number") + 
+  ggtitle("Upvotes & Comments Across Episode Discussion Threads",
+        subtitle = "Number of upvotes as points connected by lines. \nNumber of comments as bars.")
+```
+
+# Retrieve Comments From Threads [TODO]
+
+```{r}
+source("secret.R")
+urls <- subs$url
+```
+
+```{python}
+reddit = praw.Reddit(client_id = r.client_id,
+                     client_secret= r.client_secret,
+                     user_agent="demon-sayer")
+
+allthread_comments = []
+
+for thread in r.urls:
+    comments = []
+    submission = reddit.submission(url = thread)
+    submission.comments.replace_more(limit=None)
+    for comment in submission.comments.list():
+        comments.append(comment.body)
+    allthread_comments.append(comments)
+    
+    
+print("DONE")
+```
+
+```{r}
+mylist <- py$allthread_comments
+```
+
+
